@@ -43,23 +43,6 @@ console.log("metacircular map:", [1, 2, 3, 4, 5].map(metacircularMap));
 ```
 
 to see the output in the console.
-   
-### Using `bower`:
-
-    bower install git@github.com:metaes/metaes.git
-    
-Then import the script:
-
-```html
-<script src="bower_components/esprima/esprima.js"></script>
-<script src="bower_components/metaes/metaes.js"></script>
-```
-
-and then you can write:
-
-```js
-metaes.evaluate('console.log("hello world!")', window);
-```
     
 ## Documentation
 
