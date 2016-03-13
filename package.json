@@ -2,13 +2,11 @@
   "name": "metaes",
   "version": "0.1.0",
   "main": "metaes.js",
-  "dependencies": {
-    "esprima": "^1.1.0-dev-harmony"
-  },
-  "devDependencies": {
-    "esprima": "git://github.com/ariya/esprima.git#harmony"
-  },
   "engines": {
     "node": ">=0.8.0"
+  },
+  "dependencies": {
+    "esprima": "^2.7.2",
+    "typescript": "^1.8.7"
   }
 }
