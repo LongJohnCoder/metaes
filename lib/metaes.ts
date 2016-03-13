@@ -40,9 +40,9 @@ export interface SimpleEnvironment {
 }
 
 export interface ComplexEnvironment {
-  prev:Env;
-  names:SimpleEnvironment;
-  cfg:EvaluationConfig;
+  prev?:Env;
+  names?:SimpleEnvironment;
+  cfg?:EvaluationConfig;
 
   // reference to metacircular function that was called and produced new scope od execution.
   fn?:MetaFunction
@@ -70,17 +70,17 @@ interface Interceptor {
 }
 
 interface EvaluationConfig {
-  interceptor:Interceptor;
+  interceptor?:Interceptor;
 
-  programText:string;
+  programText?:string;
 
   // name of the VM, can be filename or just any arbitrary name.
   // Leaving it undefined will by default assign name like VMx where `x` is next natural number.
   name?:string
 }
 
-function clone(from) {
-  var to = {};
+function clone<T>(from:T):T {
+  var to = {} as T;
   for (var i in from) {
     if (from.hasOwnProperty(i)) {
       to[i] = from[i];
@@ -89,9 +89,17 @@ function clone(from) {
   return to;
 }
 
-type Token = (e:ESTree.Node, env, c, cerr, pause?:()=>void)=>void;
+type TokenHandler = (e:ESTree.Node, env, c, cerr, pause?:()=>void)=>void;
+type TokensMap = {
+  [key:string]:TokenHandler;
+  ForStatement:TokenHandler;
+  IfStatement:TokenHandler;
+  BlockStatement:TokenHandler;
+  FunctionExpression:TokenHandler;
+  ForInStatement:TokenHandler;
+};
 
-let tokens:{[key:string]:Token} = {
+let tokens:TokensMap = {
   VariableDeclaration(e:ESTree.VariableDeclaration, env, c, cerr) {
     delayEvaluate(e.declarations, env, () => {
       c()
@@ -554,7 +562,7 @@ let tokens:{[key:string]:Token} = {
   WhileStatement(e:ESTree.WhileStatement, env, c, cerr) {
     tokens.ForStatement(e, env, c, cerr);
   },
-  
+
   DoWhileStatement(e:ESTree.DoWhileStatement, env, c, cerr) {
     // TODO: create base function for all loops and call it with functions as configuration arguments
     tokens.ForStatement(e, env, c, cerr);
@@ -1071,8 +1079,8 @@ let tokens:{[key:string]:Token} = {
         case "Error":
           // TODO: mark `throwArgument` as inacessible
           setValue(env, 'throwArgument', throwArgument, true);
-          if (e.handlers.length) {
-            delayEvaluate(e.handlers[0], env, (result) => {
+          if (e.handler) {
+            delayEvaluate(e.handler, env, (result) => {
                 // TODO: tidy up throwArgument here
                 delete env.names.throwArgument;
                 finalizer(c.bind(null, result));
@@ -1324,7 +1332,8 @@ MetaFunction.prototype.run = (thisObj, args, c, cerr, prevEnv) => {
         this: thisObj || _this
       },
       closure: this.env,
-      prev: prevEnv
+      prev: prevEnv,
+      variables: {}
     };
 
   // if function is named, pass its name to environment to allow recursive calls
@@ -1338,8 +1347,6 @@ MetaFunction.prototype.run = (thisObj, args, c, cerr, prevEnv) => {
     writable: true
   });
   var functionResult;
-
-  env.variables = env.variables || {};
 
   // set function scope variables variables based on formal function parameters
   this.e.params.forEach((param, i) => {
@@ -1363,7 +1370,6 @@ MetaFunction.prototype.run = (thisObj, args, c, cerr, prevEnv) => {
       switch (nodeType) {
         case "YieldExpression":
           throw new Error("Handle properly saving continuation here");
-          break;
         case "ReturnStatement":
           c.call(null, result, extraParam);
           break;
@@ -1405,7 +1411,7 @@ function apply(e, thisObj, fn, args, c, cerr, env) {
   }
 }
 
-function applyInterceptor(e, val, env, pause) {
+function applyInterceptor(e:ESTree.Node, val:any, env:ComplexEnvironment, pause?) {
   if ('interceptor' in env.cfg && e.type) {
     env.cfg.interceptor(e, val, env, pause);
   }
@@ -1461,7 +1467,6 @@ function evaluate(e, env, c, cerr) {
         tokens[e.type](e, env, success, cerr);
       } else {
         var error = new Error(e.type + " token is not yet implemented.");
-        error.e = e;
         throw error;
       }
     } else {
@@ -1514,7 +1519,7 @@ function createPausable(fn, c, args) {
   return {pauser: pauser, delayed: delayed};
 }
 
-function delayEvaluate(e, env, c, cerr) {
+function delayEvaluate(e, env, c, cerr, ...more) {
   var _c = c;
   c = () => {
     var continuation = createPausable(_c, _c, arguments);
@@ -1547,7 +1552,7 @@ var parseConfig = {
   range: true
 };
 
-function metaEval(node, programText, env:ComplexEnvironment | SimpleEnvironment, c, cerr) {
+function metaEval(node, programText, env:ComplexEnvironment, c, cerr) {
 
   // take only first argument that should be a text
   programText = programText[0];
@@ -1591,8 +1596,8 @@ function metaEval(node, programText, env:ComplexEnvironment | SimpleEnvironment,
 var VMsCounter = 0;
 
 export function mainEvaluate(text:string,
-                             rootEnvironment?:ComplexEnvironment = {},
-                             cfg?:EvaluationConfig = {},
+                             rootEnvironment:ComplexEnvironment = {},
+                             cfg:EvaluationConfig = {},
                              c?:SuccessCallback,
                              cerr?:ErrorCallback) {
   if (typeof text === "function") {
