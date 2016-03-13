@@ -1,3 +1,3 @@
 import {mainEvaluate} from "./metaes";
 
-console.log(mainEvaluate("test"));
+console.log(mainEvaluate("2+2"));
