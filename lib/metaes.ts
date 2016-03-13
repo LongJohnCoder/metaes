@@ -367,7 +367,7 @@ let tokens:TokensMap = {
   },
 
   LabeledStatement(e:ESTree.LabeledStatement, env, c, cerr) {
-    delayEvaluate(e.body, env, c, (type, labelName, continuation) => {
+    delayEvaluate(e.body, env, c, function (type, labelName, continuation) {
       if (e.label.name && e.label.name === labelName) {
         if (type === "ContinueStatement") {
           continuation();
@@ -549,7 +549,7 @@ let tokens:TokensMap = {
       }, cerr)
     }
 
-    delayEvaluate(e.left, env, rightHandSide, (errorType, value) => {
+    delayEvaluate(e.left, env, rightHandSide, function (errorType, value) {
       if (errorType === "Error" && (value instanceof ReferenceError)) {
         setValue(env, (e.left).name, undefined, false);
         rightHandSide();
@@ -1085,8 +1085,7 @@ let tokens:TokensMap = {
                 delete env.names.throwArgument;
                 finalizer(c.bind(null, result));
               },
-              () => {
-                var args = arguments;
+              (...args) => {
                 finalizer(() => {
                   cerr.apply(null, args);
                 });
@@ -1316,9 +1315,9 @@ MetaFunction.prototype.run = (thisObj, args, c, cerr, prevEnv) => {
     return mockedArgsObject;
   }
 
-  var _this;
+  var self;
   getValue(this.env, 'this', false, (value) => {
-    _this = value;
+    self = value;
   }, cerr);
 
   var
@@ -1329,7 +1328,7 @@ MetaFunction.prototype.run = (thisObj, args, c, cerr, prevEnv) => {
       fn: self,
       cfg: cfg,
       names: {
-        this: thisObj || _this
+        this: thisObj || self
       },
       closure: this.env,
       prev: prevEnv,
@@ -1366,7 +1365,7 @@ MetaFunction.prototype.run = (thisObj, args, c, cerr, prevEnv) => {
     (result) => {
       c(undefined);
     },
-    (nodeType, result, extraParam) => {
+    function (nodeType, result, extraParam) {
       switch (nodeType) {
         case "YieldExpression":
           throw new Error("Handle properly saving continuation here");
@@ -1436,11 +1435,11 @@ function evaluate(e, env, c, cerr) {
             results.push(result);
             next(e.slice(1));
           },
-          (errorType) => {
-            if (errorType === "BreakStatement") {
-              cerr.apply(null, [].slice.call(arguments).concat([results]));
+          (...args) => {
+            if (args[0] === "BreakStatement") {
+              cerr.apply(null, args.concat([results]));
             } else {
-              cerr.apply(null, arguments);
+              cerr.apply(null, args);
             }
           });
       } else {
@@ -1490,29 +1489,29 @@ var tasksStack = [];
 function createPausable(fn, c, args) {
   var
     locked = false,
-    delayed = () => {
+    delayed = (...args) => {
       if (!locked) {
         locked = true;
-        if (arguments.length) {
+        if (args.length) {
           // alternative call with given continuation
-          c.apply(null, arguments);
+          c.apply(null, args);
         } else {
           // normal call
           fn.apply(null, args);
         }
       }
     },
-    resume = () => {
+    resume = (...args) => {
       locked = false;
-      delayed.apply(null, arguments);
+      delayed.apply(null, args);
 
       // rerun the VM
       execute();
     },
-    pauser = () => {
+    pauser = (...args) => {
       locked = true;
       return () => {
-        resume.apply(null, arguments);
+        resume.apply(null, args);
       }
     };
 
@@ -1521,10 +1520,10 @@ function createPausable(fn, c, args) {
 
 function delayEvaluate(e, env, c, cerr, ...more) {
   var _c = c;
-  c = () => {
-    var continuation = createPausable(_c, _c, arguments);
+  c = (...args) => {
+    var continuation = createPausable(_c, _c, args);
     // give a change to the client code to pause and modify the execution after evaluation
-    applyInterceptor(e, arguments, env, continuation.pauser);
+    applyInterceptor(e, args, env, continuation.pauser);
     tasksStack.push(continuation.delayed);
   };
   var pausableEvaluate = createPausable(evaluate, c, arguments);
@@ -1629,7 +1628,7 @@ export function mainEvaluate(text:string,
     });
 
     function wrapResult(continuation) {
-      return (ast, result, result2) => {
+      return function (ast, result, result2) {
         evaluationResult = result2 || result;
         if (continuation) {
           continuation.apply(null, arguments);
