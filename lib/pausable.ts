@@ -6,7 +6,7 @@
  * @param args - arguments to `fn` if `fn` is called
  * @returns {{pauser: Function, delayed: Function}}
  */
-export function createPausable(fn, c, execute, args) {
+export function createPausable(fn:Function, c, execute, args) {
   var
     locked = false,
     delayed = function () {

@@ -23,72 +23,11 @@
 import * as esprima from "esprima";
 import {createPausable} from "./pausable";
 import {clone} from "./utils";
-
-/**
- * Metacircular function representation in MetaES VM.
- */
-interface MetaFunction extends Function {
-  e:ESTree.Function;
-  env:Env;
-  cfg:EvaluationConfig;
-}
-
-/**
- * Key-valued object of all the names in existing environment (scope).
- */
-export interface SimpleEnvironment {
-  [key:string]:any
-}
-
-export interface ComplexEnvironment {
-  prev?:Env;
-  names?:SimpleEnvironment;
-  cfg?:EvaluationConfig;
-
-  // reference to metacircular function that was called and produced new scope od execution.
-  fn?:MetaFunction
-
-  // Reference to closure of `fn` function
-  closure?:ComplexEnvironment
-}
-
-/**
- * Environment can be both simple or complex.
- */
-export type Env = SimpleEnvironment | ComplexEnvironment;
-
-type SuccessCallback = (ast:ESTree.Node, value:any) => void;
-type ErrorCallback = (ast:ESTree.Node, errorType:String, error?:Error)=>void
-
-/**
- * When pause() is called it returns function that should be used for resuming the execution. For example:
- *
- * var resume = pause();
- * setTimeout(resume, 1000, "resumeValue");
- */
-interface Interceptor {
-  (e:ESTree.Node, val:any, env:Env, pause?:() => (resumeValue:any) => void):void;
-}
-
-interface EvaluationConfig {
-  interceptor?:Interceptor;
-
-  programText?:string;
-
-  // name of the VM, can be filename or just any arbitrary name.
-  // Leaving it undefined will by default assign name like VMx where `x` is next natural number.
-  name?:string
-}
-
-type TokenHandler = (e:ESTree.Node, env:ComplexEnvironment, c:()=>void, cerr:()=>void, pause?:()=>void)=>void;
-type TokensMap = {
-  [key:string]:TokenHandler;
-  ForStatement:TokenHandler;
-  IfStatement:TokenHandler;
-  BlockStatement:TokenHandler;
-  FunctionExpression:TokenHandler;
-  ForInStatement:TokenHandler;
-};
+import {setValue, getValue} from "./environment";
+import {
+  TokensMap, ComplexEnvironment, EvaluationConfig, SuccessCallback, SimpleEnvironment,
+  ErrorCallback, EnvironmentTypeAnnotation
+} from "./types";
 
 let tokens:TokensMap = {
   VariableDeclaration(e:ESTree.VariableDeclaration, env, c, cerr) {
@@ -1095,18 +1034,21 @@ let tokens:TokensMap = {
   },
 
   ThrowStatement(e:ESTree.ThrowStatement, env, c, cerr) {
-    delayEvaluate(e.argument, env, (argument) => {
-      cerr(e.type, argument);
-    }, cerr);
+    delayEvaluate(e.argument,
+      env,
+      function (argument) {
+        cerr(e.type, argument);
+      },
+      cerr);
   },
 
   CatchClause(e:ESTree.CatchClause, env, c, cerr) {
     function foundName(value) {
       // assign catched variable value to the given reference name
-      var catchEnv = {
+      var catchEnv:ComplexEnvironment = {
         prev: env,
         names: {},
-        type: e.type,
+        type: <EnvironmentTypeAnnotation>e.type,
         cfg: env.cfg
       };
       catchEnv.names[e.param.name] = value;
@@ -1150,80 +1092,14 @@ let tokens:TokensMap = {
   },
 
   YieldExpression(e:ESTree.YieldExpression, env, c, cerr) {
-    delayEvaluate(e.argument, env, (result) => {
-      cerr(e.type, result, c);
-    }, cerr)
+    delayEvaluate(e.argument, env,
+      function (result) {
+        cerr(e.type, result, c);
+      },
+      cerr)
   }
 };
 
-function setValue(env, name, value, isDeclaration) {
-  if (isDeclaration) {
-    while (env.type === "CatchClause" || env.type === "WithStatement") {
-      env = env.prev;
-    }
-    if (!(name in env.names)) {
-      Object.defineProperty(env.names, name, {
-        value: value,
-        configurable: false,
-        enumerable: true,
-        writable: true
-      });
-    } else if (typeof value !== "undefined") {
-      env.names[name] = value;
-    }
-    return value;
-  } else {
-    function loop_(env) {
-      if (!env.prev) {
-        return env.names;
-      } else {
-        if (name in env.names) {
-          return env.names;
-        } else {
-          return loop_(env.prev);
-        }
-      }
-    }
-
-    return loop_(env)[name] = value;
-  }
-}
-
-/**
- * Gets a value from an environment.
- *
- * @param env
- * @param name
- * @param shouldReturnContainer - If true, then return value and object that contains that value.
- * @param c
- * @param cerr
- */
-function getValue(env, name, shouldReturnContainer, c, cerr) {
-  var envs = [];
-
-  function getValueHelper(container, key) {
-    var value = container[key];
-    return shouldReturnContainer ? [value, container] : value;
-  }
-
-  function loop_(env) {
-
-    if (!env) {
-      if (cerr) {
-        cerr("Error", new ReferenceError(name + " is not defined."), true, envs[0]);
-      }
-    } else {
-      envs.push(env);
-      if (name in env.names) {
-        c(getValueHelper(env.names, name))
-      } else {
-        loop_(env.prev);
-      }
-    }
-  }
-
-  loop_(env);
-}
 
 /**
  * Constructor for Function in metacircular world.
@@ -1469,7 +1345,6 @@ function evaluate(e, env, c, cerr) {
 // TODO: should be local for each subsequent VM?
 let tasksStack = [];
 
-
 function delayEvaluate(e, env, c, cerr, ...more) {
   var _c = c;
   c = (...args) => {
@@ -1544,7 +1419,7 @@ function metaEval(node, programText, env:ComplexEnvironment, c, cerr) {
   }
 }
 
-var VMsCounter = 0;
+let VMsCounter = 0;
 
 export function mainEvaluate(text:string,
                              rootEnvironment:ComplexEnvironment | SimpleEnvironment = {},
