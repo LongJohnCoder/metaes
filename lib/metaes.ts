@@ -21,7 +21,8 @@
 // THE SOFTWARE.
 
 import * as esprima from "esprima";
-import VariableDeclaration = ESTree.VariableDeclaration;
+import {createPausable} from "./pausable";
+import {clone} from "./utils";
 
 /**
  * Metacircular function representation in MetaES VM.
@@ -79,17 +80,7 @@ interface EvaluationConfig {
   name?:string
 }
 
-function clone<T>(from:T):T {
-  var to = {} as T;
-  for (var i in from) {
-    if (from.hasOwnProperty(i)) {
-      to[i] = from[i];
-    }
-  }
-  return to;
-}
-
-type TokenHandler = (e:ESTree.Node, env, c, cerr, pause?:()=>void)=>void;
+type TokenHandler = (e:ESTree.Node, env:ComplexEnvironment, c:()=>void, cerr:()=>void, pause?:()=>void)=>void;
 type TokensMap = {
   [key:string]:TokenHandler;
   ForStatement:TokenHandler;
@@ -101,9 +92,7 @@ type TokensMap = {
 
 let tokens:TokensMap = {
   VariableDeclaration(e:ESTree.VariableDeclaration, env, c, cerr) {
-    delayEvaluate(e.declarations, env, () => {
-      c()
-    }, cerr);
+    delayEvaluate(e.declarations, env, c, cerr);
   },
 
   VariableDeclarator(e:ESTree.VariableDeclarator, env, c, cerr) {
@@ -473,11 +462,13 @@ let tokens:TokensMap = {
          * Collect results into an array. Inconsistent with native implementation,
          * because all the getters would be called immediately at the very beginning
          */
-        var
-          leftHandSide = e.left.type === "VariableDeclaration" ? (e.left as VariableDeclaration).declarations[0].id : e.left,
+        let
+          leftHandSide = e.left.type === "VariableDeclaration" ?
+            (e.left as ESTree.VariableDeclaration).declarations[0].id :
+            e.left,
           results = [];
 
-        for (var i in right) {
+        for (let i in right) {
           results.push(e.type === 'ForOfStatement' ? right[i] : i);
         }
 
@@ -528,7 +519,7 @@ let tokens:TokensMap = {
           }
         }
 
-        var loopResults;
+        let loopResults;
 
         function loop_(result?:any) {
           if (loopResults) {
@@ -1431,15 +1422,15 @@ function evaluate(e, env, c, cerr) {
     function next(e) {
       if (e.length) {
         delayEvaluate(e[0], env,
-          (result) => {
+          function (result) {
             results.push(result);
             next(e.slice(1));
           },
-          (...args) => {
-            if (args[0] === "BreakStatement") {
-              cerr.apply(null, args.concat([results]));
+          function (errorType) {
+            if (errorType === "BreakStatement") {
+              cerr.apply(null, [].slice.call(arguments).concat([results]));
             } else {
-              cerr.apply(null, args);
+              cerr.apply(null, arguments);
             }
           });
       } else {
@@ -1476,57 +1467,18 @@ function evaluate(e, env, c, cerr) {
 
 // Global accumulator of expression to be executed
 // TODO: should be local for each subsequent VM?
-var tasksStack = [];
+let tasksStack = [];
 
-/**
- * Creates a version of `fn` that is uncallable until it's allowed.
- *
- * @param fn - default function to be called
- * @param c - alternative function that can be called with a value instead of `fn`
- * @param args - arguments to `fn` if `fn` is called
- * @returns {{pauser: Function, delayed: Function}}
- */
-function createPausable(fn, c, args) {
-  var
-    locked = false,
-    delayed = (...args) => {
-      if (!locked) {
-        locked = true;
-        if (args.length) {
-          // alternative call with given continuation
-          c.apply(null, args);
-        } else {
-          // normal call
-          fn.apply(null, args);
-        }
-      }
-    },
-    resume = (...args) => {
-      locked = false;
-      delayed.apply(null, args);
-
-      // rerun the VM
-      execute();
-    },
-    pauser = (...args) => {
-      locked = true;
-      return () => {
-        resume.apply(null, args);
-      }
-    };
-
-  return {pauser: pauser, delayed: delayed};
-}
 
 function delayEvaluate(e, env, c, cerr, ...more) {
   var _c = c;
   c = (...args) => {
-    var continuation = createPausable(_c, _c, args);
+    var continuation = createPausable(_c, _c, execute, args);
     // give a change to the client code to pause and modify the execution after evaluation
     applyInterceptor(e, args, env, continuation.pauser);
     tasksStack.push(continuation.delayed);
   };
-  var pausableEvaluate = createPausable(evaluate, c, arguments);
+  var pausableEvaluate = createPausable(evaluate, c, execute, arguments);
 
   // give a change to the client code to pause the execution before evaluation
   applyInterceptor(e, undefined, env, pausableEvaluate.pauser);
@@ -1535,7 +1487,7 @@ function delayEvaluate(e, env, c, cerr, ...more) {
 }
 
 function delayApply(e, thisObj, callee, args, c, cerr, env) {
-  var pausable = createPausable(apply, c, arguments);
+  var pausable = createPausable(apply, c, execute, arguments);
   applyInterceptor(e, {this: thisObj, callee: callee, arguments: args}, env, pausable.pauser);
   tasksStack.push(pausable.delayed);
 }
@@ -1595,7 +1547,7 @@ function metaEval(node, programText, env:ComplexEnvironment, c, cerr) {
 var VMsCounter = 0;
 
 export function mainEvaluate(text:string,
-                             rootEnvironment:ComplexEnvironment = {},
+                             rootEnvironment:ComplexEnvironment | SimpleEnvironment = {},
                              cfg:EvaluationConfig = {},
                              c?:SuccessCallback,
                              cerr?:ErrorCallback) {
