@@ -21,8 +21,6 @@
 // THE SOFTWARE.
 
 import {TokensMap} from "./types";
-import {delayEvaluate} from "./evaluate";
-import {getValue} from "./environment";
 import {VariableDeclaration, VariableDeclarator} from "./interpreter/variables";
 import {FunctionExpression, FunctionDeclaration} from "./interpreter/function";
 import {
@@ -59,46 +57,17 @@ import {
   CatchClause,
   ReturnStatement,
   DebuggerStatement,
-  ForOfStatement, EmptyStatement
+  ForOfStatement,
+  EmptyStatement,
+  Program
 } from "./interpreter/statements";
+import {Literal, Identifier, Property} from "./interpreter/base";
 
 export let tokens:TokensMap = {
 
-  Literal(e:ESTree.Literal, env, c, cerr) {
-    c(e.value);
-  },
-
-  Identifier(e:ESTree.Identifier, env, c, cerr) {
-    try {
-      function foundName(pair) {
-        var value = pair[0],
-          container = pair[1];
-        c(value, container, e.name);
-      }
-
-      getValue(env, e.name, true, foundName, cerr);
-    } catch (error) {
-      cerr("Error", error, e);
-    }
-  },
-
-  Property(e:ESTree.Property, env, c, cerr) {
-    function continueToValue(key) {
-      key = e.key.name || key;
-      delayEvaluate(e.value, env, (value) => {
-        c({
-          key: key,
-          value: value
-        });
-      }, cerr);
-    }
-
-    delayEvaluate(e.key, env, continueToValue, continueToValue);
-  },
-
-  Program(e:ESTree.Program, env, c, cerr) {
-    BlockStatement(e, env, c, cerr);
-  },
+  Literal,
+  Identifier,
+  Property,
 
   VariableDeclaration,
   VariableDeclarator,
@@ -139,5 +108,6 @@ export let tokens:TokensMap = {
   CatchClause,
   ReturnStatement,
   DebuggerStatement,
-  ForOfStatement
+  ForOfStatement,
+  Program
 };

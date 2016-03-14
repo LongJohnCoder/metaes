@@ -470,3 +470,7 @@ export function ForOfStatement(e:ESTree.ForOfStatement, env, c, cerr) {
 export function EmptyStatement(e:ESTree.EmptyStatement, env, c, cerr) {
   c();
 }
+
+export function Program(e:ESTree.Program, env, c, cerr) {
+  BlockStatement(e, env, c, cerr);
+}
