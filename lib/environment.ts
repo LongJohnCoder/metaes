@@ -1,8 +1,8 @@
-import {ComplexEnvironment} from "./types";
+import {Environment} from "./types";
 
-export function PutValue(env:ComplexEnvironment, name:string, value:any, isDeclaration:boolean) {
+export function PutValue(env:Environment, name:string, value:any, isDeclaration:boolean) {
   if (isDeclaration) {
-    while (env.type === "CatchClause" || env.type === "WithStatement") {
+    while (env.locked) {
       env = env.prev;
     }
     if (!(name in env.names)) {
@@ -15,56 +15,26 @@ export function PutValue(env:ComplexEnvironment, name:string, value:any, isDecla
     } else if (typeof value !== "undefined") {
       env.names[name] = value;
     }
-    return value;
   } else {
-    function loop_(env) {
+    while (true) {
       if (!env.prev) {
-        return env.names;
-      } else {
-        if (name in env.names) {
-          return env.names;
-        } else {
-          return loop_(env.prev);
-        }
+        env.names[name] = value;
+        break;
+      } else if (name in env.names) {
+        env.names[name] = value;
+        break;
       }
     }
-
-    return loop_(env)[name] = value;
   }
 }
 
-/**
- * Gets a value from an environment.
- *
- * @param env
- * @param name
- * @param shouldReturnContainer - If true, then return value and object that contains that value.
- * @param c
- * @param cerr
- */
-export function GetValue(env:ComplexEnvironment, name:string, shouldReturnContainer:boolean, c, cerr) {
-  var envs = [];
-
-  function getValueHelper(container, key) {
-    var value = container[key];
-    return shouldReturnContainer ? [value, container] : value;
-  }
-
-  function loop_(env) {
-
+export function GetValue(env:Environment, name:string) {
+  do {
     if (!env) {
-      if (cerr) {
-        cerr("Error", new ReferenceError(name + " is not defined."), true, envs[0]);
-      }
-    } else {
-      envs.push(env);
-      if (name in env.names) {
-        c(getValueHelper(env.names, name))
-      } else {
-        loop_(env.prev);
-      }
+      throw new ReferenceError(name + " is not defined.");
     }
-  }
-
-  loop_(env);
+    if (name in env.names) {
+      return {value: env.names[name], container: env.names};
+    }
+  } while (env = env.prev);
 }

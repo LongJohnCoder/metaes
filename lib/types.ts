@@ -3,28 +3,23 @@ import {MetaFunction} from "./metafunction";
 /**
  * Key-valued object of all the names in existing environment (scope).
  */
-export interface SimpleEnvironment {
+export interface NamesMap {
   [key:string]:any
 }
 
-export type EnvironmentTypeAnnotation = 'CatchClause' | 'WithStatement';
-export interface ComplexEnvironment {
-  prev?:Env;
-  names?:SimpleEnvironment;
+export interface Environment {
+  prev?:Environment;
+  names?:NamesMap;
   cfg?:EvaluationConfig;
-  type?:EnvironmentTypeAnnotation;
-
+  
+  // means you can't set `names` on it env. Use `prev` instead
+  locked?:boolean;
   // reference to metacircular function that was called and produced new scope od execution.
   fn?:MetaFunction
 
   // Reference to closure of `fn` function
-  closure?:ComplexEnvironment
+  closure?:Environment
 }
-
-/**
- * Environment can be both simple or complex.
- */
-export type Env = SimpleEnvironment | ComplexEnvironment;
 
 export type SuccessCallback = (ast:ESTree.Node, value:any) => void;
 export type ErrorCallback = (ast:ESTree.Node, errorType:String, error?:Error)=>void
@@ -36,7 +31,7 @@ export type ErrorCallback = (ast:ESTree.Node, errorType:String, error?:Error)=>v
  * setTimeout(resume, 1000, "resumeValue");
  */
 export interface Interceptor {
-  (e:ESTree.Node, val:any, env:Env, pause?:() => (resumeValue:any) => void):void;
+  (e:ESTree.Node, value:any, env:Environment, pause?:() => (resumeValue:any) => void):void;
 }
 
 export interface EvaluationConfig {
@@ -49,11 +44,9 @@ export interface EvaluationConfig {
   name?:string
 }
 
-export type TokenHandler = (e:ESTree.Node,
-                            env:ComplexEnvironment,
-                            c:(value?:any)=>void,
-                            cerr:(errorName:string, error?:Error)=>void,
-                            pause?:()=>void)=>void;
+
+export type EvaluatedNode<T extends ESTree.Node> = {node:T, value:any, subProgram:string};
+export type TokenHandler<T extends ESTree.Node>  = (e:T, env:Environment)=>Promise<any>;
 export type TokensMap = {
-  [key:string]:TokenHandler
+  [key:string]:TokenHandler<any>
 };

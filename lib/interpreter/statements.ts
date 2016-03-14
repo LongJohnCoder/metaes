@@ -2,7 +2,7 @@ import {delayEvaluate, evaluate} from "../evaluate";
 import {PutValue, GetValue} from "../environment";
 import {clone} from "../utils";
 import {applyInterceptor} from "../interceptor";
-import {EnvironmentTypeAnnotation, ComplexEnvironment} from "../types";
+import {EnvironmentTypeAnnotation, Environment} from "../types";
 import {MetaFunction} from "../metafunction";
 
 export function LabeledStatement(e:ESTree.LabeledStatement, env, c, cerr) {
@@ -238,7 +238,6 @@ export function WithStatement(e:ESTree.WithStatement, env, c, cerr) {
 }
 
 export function BlockStatement(e:ESTree.BlockStatement, env, c, cerr) {
-
   function runHoisting(e) {
     var declarations = [];
 
@@ -432,7 +431,7 @@ export function ThrowStatement(e:ESTree.ThrowStatement, env, c, cerr) {
 export function CatchClause(e:ESTree.CatchClause, env, c, cerr) {
   function foundName(value) {
     // assign catched variable value to the given reference name
-    var catchEnv:ComplexEnvironment = {
+    var catchEnv:Environment = {
       prev: env,
       names: {},
       type: <EnvironmentTypeAnnotation>e.type,

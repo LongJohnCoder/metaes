@@ -1,99 +1,94 @@
-import {delayEvaluate, apply, delayApply} from "../evaluate";
+import {apply, evaluate} from "../evaluate";
 import {GetValue, PutValue} from "../environment";
 import {applyInterceptor} from "../interceptor";
 import {IfStatement} from "./statements";
 import {FunctionExpression} from "./function";
 
-export function BinaryExpression(e:ESTree.BinaryExpression, env, c, cerr) {
-  delayEvaluate(e.left, env, (left) => {
-    delayEvaluate(e.right, env, (right) => {
-      try {
-        var value;
-        switch (e.operator) {
-          case "+":
-            value = left + right;
-            break;
-          case "-":
-            value = left - right;
-            break;
-          case "===":
-            value = left === right;
-            break;
-          case "==":
-            value = left == right;
-            break;
-          case "!==":
-            value = left !== right;
-            break;
-          case "!=":
-            value = left != right;
-            break;
-          case "<":
-            value = left < right;
-            break;
-          case "<=":
-            value = left <= right;
-            break;
-          case ">":
-            value = left > right;
-            break;
-          case ">=":
-            value = left >= right;
-            break;
-          case "*":
-            value = left * right;
-            break;
-          case "/":
-            value = left / right;
-            break;
-          case "instanceof":
-            value = left instanceof right;
-            break;
-          case "in":
-            value = left in right;
-            break;
-          case "^":
-            value = left ^ right;
-            break;
-          case "<<":
-            value = left << right;
-            break;
-          case ">>":
-            value = left >> right;
-            break;
-          case ">>>":
-            value = left >>> right;
-            break;
-          case "%":
-            value = left % right;
-            break;
-          case "&":
-            value = left & right;
-            break;
-          case "|":
-            value = left | right;
-            break;
-          default:
-            throw new Error(e.type + " not implemented " + e.operator);
-        }
-        c(value, left, right);
-      } catch (e) {
-        cerr("Error", e);
-      }
-    }, cerr);
-  }, cerr);
+export async function BinaryExpression(e:ESTree.BinaryExpression, env) {
+  let value;
+  let [left, right] = [
+    (await evaluate(e.left, env)).value,
+    (await evaluate(e.right, env)).value];
+
+  switch (e.operator) {
+    case "+":
+      value = left + right;
+      break;
+    case "-":
+      value = left - right;
+      break;
+    case "===":
+      value = left === right;
+      break;
+    case "==":
+      value = left == right;
+      break;
+    case "!==":
+      value = left !== right;
+      break;
+    case "!=":
+      value = left != right;
+      break;
+    case "<":
+      value = left < right;
+      break;
+    case "<=":
+      value = left <= right;
+      break;
+    case ">":
+      value = left > right;
+      break;
+    case ">=":
+      value = left >= right;
+      break;
+    case "*":
+      value = left * right;
+      break;
+    case "/":
+      value = left / right;
+      break;
+    case "instanceof":
+      value = left instanceof right;
+      break;
+    case "in":
+      value = left in right;
+      break;
+    case "^":
+      value = left ^ right;
+      break;
+    case "<<":
+      value = left << right;
+      break;
+    case ">>":
+      value = left >> right;
+      break;
+    case ">>>":
+      value = left >>> right;
+      break;
+    case "%":
+      value = left % right;
+      break;
+    case "&":
+      value = left & right;
+      break;
+    case "|":
+      value = left | right;
+      break;
+    default:
+      throw new Error(e.type + " not implemented " + e.operator);
+  }
+  return {left,right,value};
 }
 
-export function LogicalExpression(e:ESTree.LogicalExpression, env, c, cerr) {
-  delayEvaluate(e.left, env, (left) => {
-    if (!left && e.operator === "&&") {
-      c(left);
-    } else if (left && e.operator === "||") {
-      c(left);
-    } else {
-      delayEvaluate(e.right, env, c, cerr);
-    }
-  }, cerr);
+export async function LogicalExpression(e:ESTree.LogicalExpression, env) {
+  let left = (await evaluate(e.left, env)).value;
+  if (!left && e.operator === "&&") {
+    return left;
+  } else if (left && e.operator === "||") {
+    return left;
+  } else {
+    return await evaluate(e.right, env);
+  }
 }
 
 export function UnaryExpression(e:ESTree.UnaryExpression, env, c, cerr) {
@@ -203,7 +198,7 @@ export function UnaryExpression(e:ESTree.UnaryExpression, env, c, cerr) {
     }
   }
 
-  delayEvaluate(e.argument, env, success, error);
+  evaluate(e.argument, env, success, error);
 }
 
 export function ObjectExpression(e:ESTree.ObjectExpression, env, c, cerr) {

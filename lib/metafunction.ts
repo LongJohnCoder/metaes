@@ -1,153 +1,118 @@
-import {clone} from "./utils";
-import {EvaluationConfig, ComplexEnvironment} from "./types";
 import {PutValue, GetValue} from "./environment";
 import {applyInterceptor} from "./interceptor";
-import {delayEvaluate, execute} from "./evaluate";
+import {execute} from "./evaluate";
+import {Environment, SuccessCallback, ErrorCallback} from "./types";
 
-export class MetaFunction {
-  public cfg:EvaluationConfig;
+function createArgumentslike(args:any[], callee:Function) {
+  let argumentsLike = {};
 
-  constructor(public e:ESTree.Function, public env) {
-    this.cfg = clone(env.cfg);
-
-    let self = this, evaluationResult;
-
-    function MetaInvokerInner() {
-
-      // If metacirtular function is called from native function, it is important to return metacircular value
-      // to the native function.
-      self.run(this, arguments, c, cerr, self.env);
-
-      // passing c to the `run` function should eventually set up `evaluationResult` variable with evaluated value
-      return evaluationResult;
-    }
-
-    function cerr(errorType, e) {
-      throw e;
-    }
-
-    // nowhere to continue
-    function c(result) {
-      evaluationResult = result;
-    }
-
-    let
-      functionParamsNames = this.paramsNames = e.params.map((param) => {
-        return param.name;
-      }),
-      functionName = e.id ? e.id.name : "",
-      functionSource =
-        "(function " + functionName + "(" + functionParamsNames.join(",") + ") {" +
-        "return MetaInvokerInner.apply(this,arguments)" +
-        "})",
-      MetaInvoker = eval(functionSource);
-
-    MetaInvoker.toString = () => {
-      return env.cfg.programText.substring(e.range[0], e.range[1]);
-    };
-
-    MetaInvoker.metaFunction = this;
-
-    Object.defineProperties(MetaInvoker, {
-      "toString": {
-        enumerable: false
-      },
-      "metaFunction": {
-        enumerable: false
-      }
-    });
-
-    this.metaInvoker = MetaInvoker;
-
-    return MetaInvoker;
+  for (let i = 0; i < args.length; i++) {
+    argumentsLike[i] = args[i];
   }
 
-
-  run(thisObj, args, c, cerr, prevEnv:ComplexEnvironment) {
-    function buildArgsObject(input) {
-      var mockedArgsObject = {};
-
-      for (var i = 0; i < input.length; i++) {
-        mockedArgsObject[i] = input[i];
-      }
-
-      Object.defineProperties(mockedArgsObject, {
-        "length": {
-          enumerable: false,
-          value: input.length
-        },
-        "callee": {
-          enumerable: false,
-          value: self.metaInvoker
-        }
-      });
-      return mockedArgsObject;
+  Object.defineProperties(argumentsLike, {
+    "length": {
+      enumerable: false,
+      value: args.length
+    },
+    "callee": {
+      enumerable: false,
+      value: callee
     }
+  });
+  return argumentsLike;
+}
 
-    let self;
-    GetValue(this.env, 'this', false, (value) => {
-      self = value;
-    }, cerr);
+export function MetaFunction(e:ESTree.Function, env:Environment) {
+  this.e = e;
+  this.env = env;
 
-    let
-      cfg = prevEnv.cfg,
-      argsObject = buildArgsObject(args),
-      env:ComplexEnvironment = {
-        fn: self,
-        cfg: cfg,
-        names: {
-          this: thisObj || self
-        },
-        closure: this.env,
-        prev: prevEnv,
-        variables: {}
-      };
+  let metaFunction = this;
 
-    // if function is named, pass its name to environment to allow recursive calls
-    if (this.e.id) {
-      PutValue(env, this.e.id.name, this.metaInvoker, true);
-    }
+  // If metacirtular function is called from native function, it is important to return metacircular value
+  // to the native function.
+  return function () {
+    let evaluationResult;
 
-    Object.defineProperty(env.names, "arguments", {
-      configurable: false,
-      value: argsObject,
-      writable: true
-    });
-    var functionResult;
-
-    // set function scope variables variables based on formal function parameters
-    this.e.params.forEach((param, i) => {
-      applyInterceptor(param, args[i], env);
-
-      // TODO: clean up
-      // create variable
-      PutValue(env, param.name, args[i], true);
-
-      // assign (or reassign) variable
-      PutValue(env, param.name, args[i], false);
-
-      env.variables[param.name] = param;
-    });
-
-    delayEvaluate(this.e.body, env,
+    metaFunction.run(
+      this,
+      [...arguments],
       (result) => {
-        c(undefined);
+        evaluationResult = result;
       },
-      function (nodeType, result, extraParam) {
-        switch (nodeType) {
-          case "YieldExpression":
-            throw new Error("Handle properly saving continuation here");
-          case "ReturnStatement":
-            c.call(null, result, extraParam);
-            break;
-          default:
-            cerr.apply(null, arguments);
-            break;
-        }
-      });
-
-    execute();
-    applyInterceptor(this.e, this.metaInvoker, env);
-    return functionResult;
+      (errorType, e)=> {
+        throw e;
+      },
+      env);
+    return evaluationResult;
   }
 }
+
+MetaFunction.prototype.run = function (thisObj:any, 
+                                       args:any[], 
+                                       prevEnv:Environment, 
+                                       c:SuccessCallback, 
+                                       cerr:ErrorCallback) {
+  
+  let self = GetValue(this.env, 'this').value;
+
+  let
+    env:Environment = {
+      fn: self,
+      cfg: prevEnv.cfg,
+      names: {
+        this: thisObj || self
+      },
+      closure: this.env,
+      prev: prevEnv,
+      variables: {}
+    };
+
+  // if function is named, pass its name to environment to allow recursive calls
+  if (this.e.id) {
+    PutValue(env, this.e.id.name, this.metaInvoker, true);
+  }
+
+  Object.defineProperty(env.names, "arguments", {
+    configurable: false,
+    value: createArgumentslike(args, self.metaInvoker),
+    writable: true
+  });
+  var functionResult;
+
+  // set function scope variables variables based on formal function parameters
+  this.e.params.forEach((param, i) => {
+    applyInterceptor(param, args[i], env);
+
+    // TODO: clean up
+    // create variable
+    PutValue(env, param.name, args[i], true);
+
+    // assign (or reassign) variable
+    PutValue(env, param.name, args[i], false);
+
+    env.variables[param.name] = param;
+  });
+
+  delayEvaluate(this.e.body, env,
+    (result) => {
+      c(undefined);
+    },
+    function (nodeType, result, extraParam) {
+      switch (nodeType) {
+        case "YieldExpression":
+          throw new Error("Handle properly saving continuation here");
+        case "ReturnStatement":
+          c.call(null, result, extraParam);
+          break;
+        default:
+          cerr.apply(null, arguments);
+          break;
+      }
+    });
+
+  execute();
+  applyInterceptor(this.e, this.metaInvoker, env);
+  return functionResult;
+}
+
