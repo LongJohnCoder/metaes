@@ -1,5 +1,5 @@
 import {delayEvaluate, apply, delayApply} from "../evaluate";
-import {getValue, setValue} from "../environment";
+import {GetValue, PutValue} from "../environment";
 import {applyInterceptor} from "../interceptor";
 import {IfStatement} from "./statements";
 import {FunctionExpression} from "./function";
@@ -280,8 +280,10 @@ export function AssignmentExpression(e:ESTree.AssignmentExpression, env, c, cerr
         default:
           throw new Error(e.type + " not implemented " + e.operator);
       }
-      if ('arguments' in env && obj === env.arguments && typeof env.paramsNames[propName] !== "undefined") {
-        setValue(env, env.paramsNames[propName], value, false);
+      if ('arguments' in env &&
+        obj === env.arguments &&
+        typeof env.paramsNames[propName] !== "undefined") {
+        PutValue(env, env.paramsNames[propName], value, false);
       }
       c(value);
     }
@@ -329,7 +331,7 @@ export function AssignmentExpression(e:ESTree.AssignmentExpression, env, c, cerr
           default:
             throw new Error(e.type + " not implemented " + e.operator);
         }
-        setValue(env, e.left.name, value, false);
+        PutValue(env, e.left.name, value, false);
         if ('arguments' in env) {
           var index = env.paramsNames.indexOf(e.left.name);
           if (index >= 0) {
@@ -353,7 +355,7 @@ export function AssignmentExpression(e:ESTree.AssignmentExpression, env, c, cerr
         }
       }
 
-      getValue(env, e.left.name, false, foundName, notFoundNameButAssignToGlobal);
+      GetValue(env, e.left.name, false, foundName, notFoundNameButAssignToGlobal);
 
     } else {
       delayEvaluate(e.left, env, (prop, obj, propName) => {
@@ -405,7 +407,7 @@ export function ThisExpression(e:ESTree.ThisExpression, env, c, cerr) {
     c(value, container, 'this');
   }
 
-  getValue(env, 'this', true, foundName, cerr);
+  GetValue(env, 'this', true, foundName, cerr);
 }
 
 export function CallExpression(e:ESTree.CallExpression, env, c, cerr) {
@@ -491,24 +493,28 @@ export function NewExpression(e:ESTree.NewExpression, env, c, cerr) {
 }
 
 export function ArrayExpression(e:ESTree.ArrayExpression, env, c, cerr) {
-  delayEvaluate(e.elements, env, (result) => {
-    result.forEach((r, index) => {
-      if (typeof result[index] === "undefined") {
-        // example: [,,] - in this case all indexes are not enumerable
-        // TODO: what about reasigning value to index?
-        Object.defineProperty(result, index, {
-          enumerable: false
-        });
-      }
-    });
-    c(result);
-  }, cerr);
+  delayEvaluate(e.elements, env,
+    (result) => {
+      result.forEach((r, index) => {
+        if (typeof result[index] === "undefined") {
+          // example: [,,] - in this case all indexes are not enumerable
+          // TODO: what about reasigning value to index?
+          Object.defineProperty(result, index, {
+            enumerable: false
+          });
+        }
+      });
+      c(result);
+    },
+    cerr);
 }
 
 export function SequenceExpression(e:ESTree.SequenceExpression, env, c, cerr) {
-  delayEvaluate(e.expressions, env, (results) => {
-    c(results[results.length - 1]);
-  }, cerr);
+  delayEvaluate(e.expressions, env,
+    (results) => {
+      c(results[results.length - 1]);
+    },
+    cerr);
 }
 
 export function ConditionalExpression(e:ESTree.ContinueStatement, env, c, cerr) {

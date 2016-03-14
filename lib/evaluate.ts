@@ -1,34 +1,10 @@
-// The MIT License (MIT)
-//
-// Copyright (c) 2015 Bartosz Krupa
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
-// Global accumulator of expression to be executed
-// TODO: should be local for each subsequent VM?
 import {applyInterceptor} from "./interceptor";
 import {createPausable} from "./pausable";
 import {MetaFunction} from "./metafunction";
 import {ComplexEnvironment} from "./types";
 import {clone} from "./utils";
 import {tokens} from "./tokens";
-import {parseConfig} from "./parse";
+import {parse} from "./parse";
 
 let tasksStack = [];
 
@@ -72,7 +48,7 @@ export function apply(e, thisObj, fn, args, c, cerr, env) {
         c(result);
       }
 
-      metaEval(e, args, parseConfig, env, cc, cerr);
+      metaEval(e, args, env, cc, cerr);
     } else {
       c(args[0]);
     }
@@ -146,12 +122,12 @@ export function evaluate(e, env, c, cerr) {
   }
 }
 
-function metaEval(node, programText, parseConfig, env:ComplexEnvironment, c, cerr) {
+function metaEval(node, programText, env:ComplexEnvironment, c, cerr) {
   // take only first argument that should be a text
   programText = programText[0];
 
   try {
-    var e = esprima.parse(programText, parseConfig),
+    var e = parse(programText),
       env2,
       cfg = clone(env.cfg);
 

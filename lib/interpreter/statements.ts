@@ -1,8 +1,9 @@
 import {delayEvaluate, evaluate} from "../evaluate";
-import {setValue, getValue} from "../environment";
+import {PutValue, GetValue} from "../environment";
 import {clone} from "../utils";
 import {applyInterceptor} from "../interceptor";
 import {EnvironmentTypeAnnotation, ComplexEnvironment} from "../types";
+import {MetaFunction} from "../metafunction";
 
 export function LabeledStatement(e:ESTree.LabeledStatement, env, c, cerr) {
   delayEvaluate(e.body, env, c, function (type, labelName, continuation) {
@@ -191,7 +192,7 @@ export function ForInStatement(e:ESTree.ForInStatement, env, c, cerr) {
 
   delayEvaluate(e.left, env, rightHandSide, function (errorType, value) {
     if (errorType === "Error" && (value instanceof ReferenceError)) {
-      setValue(env, (e.left).name, undefined, false);
+      PutValue(env, (e.left).name, undefined, false);
       rightHandSide();
     } else {
       cerr.apply(null, arguments);
@@ -276,7 +277,7 @@ export function BlockStatement(e:ESTree.BlockStatement, env, c, cerr) {
           value = new MetaFunction(e, env);
           break;
       }
-      setValue(env, e.id.name, value, true);
+      PutValue(env, e.id.name, value, true);
     });
 
     // TODO: warning: optimization that can corrupt live coding
@@ -332,7 +333,7 @@ export function SwitchStatement(e:ESTree.SwitchStatement, env, c, cerr) {
   }
 
   delayEvaluate(e.discriminant, env, (discriminant) => {
-    setValue(env, "discriminant", discriminant, true);
+    PutValue(env, "discriminant", discriminant, true);
 
     // TODO: block discriminant access and remove after switch is finished
     function maybeBreak(value) {
@@ -349,7 +350,7 @@ export function SwitchStatement(e:ESTree.SwitchStatement, env, c, cerr) {
 }
 
 export function SwitchCase(e:ESTree.SwitchCase, env, c, cerr) {
-  getValue(env, "discriminant", false, (discriminant) => {
+  GetValue(env, "discriminant", false, (discriminant) => {
     if (e.test) {
       delayEvaluate(e.test, env, (test) => {
         if (env.casePassed || test === discriminant) {
@@ -394,7 +395,7 @@ export function TryStatement(e:ESTree.TryStatement, env, c, cerr) {
       case "ThrowStatement":
       case "Error":
         // TODO: mark `throwArgument` as inacessible
-        setValue(env, 'throwArgument', throwArgument, true);
+        PutValue(env, 'throwArgument', throwArgument, true);
         if (e.handler) {
           delayEvaluate(e.handler, env, (result) => {
               // TODO: tidy up throwArgument here
@@ -442,7 +443,7 @@ export function CatchClause(e:ESTree.CatchClause, env, c, cerr) {
     delayEvaluate(e.body, catchEnv, c, cerr);
   }
 
-  getValue(env, 'throwArgument', false, foundName, cerr);
+  GetValue(env, 'throwArgument', false, foundName, cerr);
 }
 
 export function ReturnStatement(e:ESTree.ReturnStatement, env, c, cerr, pause) {

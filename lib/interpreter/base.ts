@@ -1,5 +1,5 @@
 import {delayEvaluate} from "../evaluate";
-import {getValue} from "../environment";
+import {GetValue} from "../environment";
 
 export function Literal(e:ESTree.Literal, env, c, cerr) {
   c(e.value);
@@ -7,13 +7,11 @@ export function Literal(e:ESTree.Literal, env, c, cerr) {
 
 export function Identifier(e:ESTree.Identifier, env, c, cerr) {
   try {
-    function foundName(pair) {
-      var value = pair[0],
-        container = pair[1];
+    function foundName([value,container]) {
       c(value, container, e.name);
     }
 
-    getValue(env, e.name, true, foundName, cerr);
+    GetValue(env, e.name, true, foundName, cerr);
   } catch (error) {
     cerr("Error", error, e);
   }
@@ -31,4 +29,8 @@ export function Property(e:ESTree.Property, env, c, cerr) {
   }
 
   delayEvaluate(e.key, env, continueToValue, continueToValue);
+}
+
+export function ArrayPattern(e:ESTree.ArrayPattern, env, c, cerr) {
+  console.log(e);
 }
