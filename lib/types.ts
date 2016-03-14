@@ -72,10 +72,5 @@ export interface EvaluationConfig {
 
 export type TokenHandler = (e:ESTree.Node, env:ComplexEnvironment, c:()=>void, cerr:()=>void, pause?:()=>void)=>void;
 export type TokensMap = {
-  [key:string]:TokenHandler;
-  ForStatement:TokenHandler;
-  IfStatement:TokenHandler;
-  BlockStatement:TokenHandler;
-  FunctionExpression:TokenHandler;
-  ForInStatement:TokenHandler;
+  [key:string]:TokenHandler
 };
