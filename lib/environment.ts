@@ -2,7 +2,8 @@ import {Environment} from "./types";
 
 export function PutValue(env:Environment, name:string, value:any, isDeclaration:boolean) {
   if (isDeclaration) {
-    while (env.locked) {
+    // TODO: if `type` is defined, it means that we don't want to store here anything?
+    while (env.type) {
       env = env.prev;
     }
     if (!(name in env.names)) {

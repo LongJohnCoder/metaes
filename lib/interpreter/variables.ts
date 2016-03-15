@@ -1,11 +1,11 @@
-import {delayEvaluate} from "../evaluate";
 import {PutValue} from "../environment";
+import {evaluate} from "../evaluate";
 
-export function VariableDeclaration(e:ESTree.VariableDeclaration, env, c, cerr) {
-  delayEvaluate(e.declarations, env, c, cerr);
+export async function VariableDeclaration(e:ESTree.VariableDeclaration, env) {
+  return await evaluate(e.declarations, env);
 }
 
-export function VariableDeclarator(e:ESTree.VariableDeclarator, env, c, cerr) {
+export function VariableDeclarator(e:ESTree.VariableDeclarator, env) {
   if ('name' in e.id) {
     PutValue(env, e.id['name'], undefined, true);
     env.variables = env.variables || {};

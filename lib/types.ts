@@ -1,5 +1,3 @@
-import {MetaFunction} from "./metafunction";
-
 /**
  * Key-valued object of all the names in existing environment (scope).
  */
@@ -11,9 +9,7 @@ export interface Environment {
   prev?:Environment;
   names?:NamesMap;
   cfg?:EvaluationConfig;
-  
-  // means you can't set `names` on it env. Use `prev` instead
-  locked?:boolean;
+  type?:String;
   // reference to metacircular function that was called and produced new scope od execution.
   fn?:MetaFunction
 
@@ -21,8 +17,15 @@ export interface Environment {
   closure?:Environment
 }
 
-export type SuccessCallback = (ast:ESTree.Node, value:any) => void;
-export type ErrorCallback = (ast:ESTree.Node, errorType:String, error?:Error)=>void
+export class ExecutionError extends Error {
+  constructor(public ast:ESTree.Node, public esError?:Error) {
+    super(esError.message);
+  }
+}
+
+export type SuccessValue = {node:ESTree.Node, value:any};
+export type SuccessCallback = (value:SuccessValue) => void;
+export type ErrorCallback = (e:ExecutionError)=>void
 
 /**
  * When pause() is called it returns function that should be used for resuming the execution. For example:

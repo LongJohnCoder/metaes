@@ -1,83 +1,61 @@
-import {apply, evaluate} from "../evaluate";
+import {apply, evaluate, evaluateArray} from "../evaluate";
 import {GetValue, PutValue} from "../environment";
 import {applyInterceptor} from "../interceptor";
 import {IfStatement} from "./statements";
 import {FunctionExpression} from "./function";
+import {Environment} from "../types";
 
 export async function BinaryExpression(e:ESTree.BinaryExpression, env) {
-  let value;
   let [left, right] = [
     (await evaluate(e.left, env)).value,
     (await evaluate(e.right, env)).value];
 
   switch (e.operator) {
     case "+":
-      value = left + right;
-      break;
+      return left + right;
     case "-":
-      value = left - right;
-      break;
+      return left - right;
     case "===":
-      value = left === right;
-      break;
+      return left === right;
     case "==":
-      value = left == right;
-      break;
+      return left == right;
     case "!==":
-      value = left !== right;
-      break;
+      return left !== right;
     case "!=":
-      value = left != right;
-      break;
+      return left != right;
     case "<":
-      value = left < right;
-      break;
+      return left < right;
     case "<=":
-      value = left <= right;
-      break;
+      return left <= right;
     case ">":
-      value = left > right;
-      break;
+      return left > right;
     case ">=":
-      value = left >= right;
-      break;
+      return left >= right;
     case "*":
-      value = left * right;
-      break;
+      return left * right;
     case "/":
-      value = left / right;
-      break;
+      return left / right;
     case "instanceof":
-      value = left instanceof right;
-      break;
+      return left instanceof right;
     case "in":
-      value = left in right;
-      break;
+      return left in right;
     case "^":
-      value = left ^ right;
-      break;
+      return left ^ right;
     case "<<":
-      value = left << right;
-      break;
+      return left << right;
     case ">>":
-      value = left >> right;
-      break;
+      return left >> right;
     case ">>>":
-      value = left >>> right;
-      break;
+      return left >>> right;
     case "%":
-      value = left % right;
-      break;
+      return left % right;
     case "&":
-      value = left & right;
-      break;
+      return left & right;
     case "|":
-      value = left | right;
-      break;
+      return left | right;
     default:
       throw new Error(e.type + " not implemented " + e.operator);
   }
-  return {left,right,value};
 }
 
 export async function LogicalExpression(e:ESTree.LogicalExpression, env) {
@@ -91,142 +69,85 @@ export async function LogicalExpression(e:ESTree.LogicalExpression, env) {
   }
 }
 
-export function UnaryExpression(e:ESTree.UnaryExpression, env, c, cerr) {
+export async function UnaryExpression(e:ESTree.UnaryExpression, env:Environment) {
+  let global;
+  let WithStatementEnvironment;
+  let argument = (await evaluate(e.argument, env)).value;
 
-  // this variable is "private symbol", used for `===` comparison
-  var noSuchReference = {};
-
-  function success(argument, obj, propName) {
-    try {
-      var envCopy = env,
-        foundWithEnvironment;
-      while (envCopy.prev) {
-        if (envCopy.type === "WithStatement") {
-          foundWithEnvironment = envCopy;
-        }
-        envCopy = envCopy.prev;
-      }
-      var
-        global = envCopy,
-        value;
-
-      switch (e.operator) {
-        case "delete":
-
-          // make sure that for example
-          // function(arg){
-          //  arg = 2;
-          //  delete arguments[0];
-          //  return arg;
-          // }
-          // will work properly
-          if (obj && obj === env.arguments && propName !== "length") {
-            env.paramsNames[propName] = void 0;
-          }
-
-          // TODO: simplify
-          if (e.argument.type === "Literal" ||
-            e.argument.type === "CallExpression" ||
-            e.argument.type === "ObjectExpression" ||
-            propName === 'this' ||
-            argument === noSuchReference) {
-
-            // 3. return true for this, but don't delete
-            // 4. reference not found in global, but return true
-            value = true;
-          } else if (foundWithEnvironment) {
-            var obj2 = obj;
-            if (propName in foundWithEnvironment.names) {
-              obj2 = foundWithEnvironment.names;
-            }
-            value = delete obj2[propName];
-          } else if (
-            obj === global.names ||
-            e.argument.type !== "Identifier") {
-
-            // always try to delete in global object or from object
-            value = delete obj[propName];
-          } else {
-            // identifier not in global object, don't delete it, but return false
-            value = false;
-          }
-          break;
-        case "typeof":
-          value = typeof argument;
-          break;
-        case "-":
-          value = -argument;
-          break;
-        case "!":
-          value = !argument;
-          break;
-        case "+":
-          value = +argument;
-          break;
-        case "~":
-          value = ~argument;
-          break;
-        case "void":
-          value = void argument;
-          break;
-        default:
-          throw new Error("not implemented " + e.operator);
-      }
-      c(value);
-    } catch (e) {
-      cerr("Error", e);
+  // find root environment
+  while (env.prev) {
+    if (env.type === "WithStatement") {
+      WithStatementEnvironment = env;
     }
+    global = env = env.prev;
   }
 
-  function error(argument, obj, propName) {
-    switch (e.operator) {
-      case "typeof":
-        // it means that reference was not declared,
-        // so in case of `typeof`, "undefined" value should be returned
-        c("undefined");
-        break;
-      case "delete":
-        if (e.argument.type === "MemberExpression" && obj instanceof ReferenceError) {
-          cerr.apply(null, arguments);
-        } else {
-          success(noSuchReference, obj, propName);
-        }
-        break;
-      default:
-        cerr.apply(null, arguments);
-        break;
-    }
-  }
+  switch (e.operator) {
+    case "delete":
+      let propName = (<ESTree.Identifier>e.argument).name;
+      let value = GetValue(env, propName);
+      if (value && value.container === env && propName !== "length") {
+        env.names[propName] = undefined;
+      }
 
-  evaluate(e.argument, env, success, error);
+      if (["Literal", "CallExpression", "ObjectExpression"].indexOf(e.argument.type) >= 0) {
+        return true;
+      } else if (WithStatementEnvironment) {
+        var obj2 = value.container;
+        if (propName in WithStatementEnvironment.names) {
+          obj2 = WithStatementEnvironment.names;
+        }
+        return delete obj2[propName];
+      } else if (value.container === global.names || e.argument.type !== "Identifier") {
+        // always try to delete in global object or from object
+        return delete value.container[propName];
+      } else {
+        // identifier not in global object, don't delete it, but return false
+        return false;
+      }
+    case "typeof":
+      return typeof argument;
+    case "-":
+      return -argument;
+    case "!":
+      return !argument;
+    case "+":
+      return +argument;
+    case "~":
+      return ~argument;
+    case "void":
+      return void argument;
+    default:
+      throw new Error("not implemented " + e.operator);
+  }
 }
 
-export function ObjectExpression(e:ESTree.ObjectExpression, env, c, cerr) {
-  delayEvaluate(e.properties, env, (properties) => {
-    var objectProperties = Object.create(null);
+export async function ObjectExpression(e:ESTree.ObjectExpression, env) {
+  let properties = (await evaluateArray(e.properties, env)).map(r=>r.value);
 
-    for (var i = 0; i < properties.length; i++) {
-      var key = properties[i].key,
-        kind = e.properties[i].kind;
-      if (["get", "set"].indexOf(kind) >= 0) {
-        objectProperties[key] = objectProperties[key] || {};
+  var objectProperties = Object.create(null);
 
-        // defaults
-        objectProperties[key].enumerable = true;
-        objectProperties[key].configurable = true;
+  for (var i = 0; i < properties.length; i++) {
+    var key = properties[i].key,
+      kind = e.properties[i].kind;
+    if (["get", "set"].indexOf(kind) >= 0) {
+      objectProperties[key] = objectProperties[key] || {};
 
-        objectProperties[key][kind] = properties[i].value;
-      } else {
-        objectProperties[properties[i].key] = {
-          value: properties[i].value,
-          configurable: true,
-          writable: true,
-          enumerable: true
-        };
-      }
+      // defaults
+      objectProperties[key].enumerable = true;
+      objectProperties[key].configurable = true;
+
+      objectProperties[key][kind] = properties[i].value;
+    } else {
+      objectProperties[properties[i].key] = {
+        value: properties[i].value,
+        configurable: true,
+        writable: true,
+        enumerable: true
+      };
     }
-    c(Object.create(Object.prototype, objectProperties));
-  }, cerr);
+  }
+  return Object.create(Object.prototype, objectProperties);
 }
 
 // TODO: clean up

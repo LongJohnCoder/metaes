@@ -1,7 +1,6 @@
 import {PutValue, GetValue} from "./environment";
-import {applyInterceptor} from "./interceptor";
-import {execute} from "./evaluate";
-import {Environment, SuccessCallback, ErrorCallback} from "./types";
+import {evaluate} from "./evaluate";
+import {Environment, ExecutionError} from "./types";
 
 function createArgumentslike(args:any[], callee:Function) {
   let argumentsLike = {};
@@ -26,34 +25,34 @@ function createArgumentslike(args:any[], callee:Function) {
 export function MetaFunction(e:ESTree.Function, env:Environment) {
   this.e = e;
   this.env = env;
-
-  let metaFunction = this;
+  let MetaFunctionInstance = this;
 
   // If metacirtular function is called from native function, it is important to return metacircular value
   // to the native function.
-  return function () {
+  function Inner() {
     let evaluationResult;
 
-    metaFunction.run(
+    MetaFunctionInstance.run(
       this,
       [...arguments],
       (result) => {
         evaluationResult = result;
       },
-      (errorType, e)=> {
+      (ast, errorType, e)=> {
         throw e;
       },
       env);
     return evaluationResult;
   }
+
+  Inner['__metaFunction__'] = MetaFunctionInstance;
+  return Inner;
 }
 
-MetaFunction.prototype.run = function (thisObj:any, 
-                                       args:any[], 
-                                       prevEnv:Environment, 
-                                       c:SuccessCallback, 
-                                       cerr:ErrorCallback) {
-  
+MetaFunction.prototype.run = async function (thisObj:any,
+                                             args:any[],
+                                             prevEnv:Environment) {
+
   let self = GetValue(this.env, 'this').value;
 
   let
@@ -64,8 +63,7 @@ MetaFunction.prototype.run = function (thisObj:any,
         this: thisObj || self
       },
       closure: this.env,
-      prev: prevEnv,
-      variables: {}
+      prev: prevEnv
     };
 
   // if function is named, pass its name to environment to allow recursive calls
@@ -78,41 +76,23 @@ MetaFunction.prototype.run = function (thisObj:any,
     value: createArgumentslike(args, self.metaInvoker),
     writable: true
   });
-  var functionResult;
 
   // set function scope variables variables based on formal function parameters
   this.e.params.forEach((param, i) => {
-    applyInterceptor(param, args[i], env);
-
-    // TODO: clean up
-    // create variable
     PutValue(env, param.name, args[i], true);
-
-    // assign (or reassign) variable
-    PutValue(env, param.name, args[i], false);
-
-    env.variables[param.name] = param;
   });
 
-  delayEvaluate(this.e.body, env,
-    (result) => {
-      c(undefined);
-    },
-    function (nodeType, result, extraParam) {
-      switch (nodeType) {
+  try {
+    return await evaluate(this.e.body, env);
+  } catch (error) {
+    if (error instanceof ExecutionError) {
+      switch (error.errorType) {
         case "YieldExpression":
           throw new Error("Handle properly saving continuation here");
-        case "ReturnStatement":
-          c.call(null, result, extraParam);
-          break;
         default:
-          cerr.apply(null, arguments);
-          break;
+          throw error;
       }
-    });
-
-  execute();
-  applyInterceptor(this.e, this.metaInvoker, env);
-  return functionResult;
-}
+    }
+  }
+};
 

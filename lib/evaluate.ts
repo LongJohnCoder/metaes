@@ -1,5 +1,4 @@
-import {MetaFunction} from "./metafunction";
-import {Environment, EvaluatedNode} from "./types";
+import {Environment, EvaluatedNode, ErrorCallback, SuccessCallback, ExecutionError} from "./types";
 import {clone} from "./utils";
 import {tokens} from "./tokens";
 import {parse} from "./parse";
@@ -15,26 +14,27 @@ export function execute() {
 /**
  * In here the function is called from metacircular space. Therefore it's possible to give it some settings.
  */
-export function apply(e:ESTree.Node, thisObj, fn:Function, args, c, cerr, env) {
+export async function apply(e:ESTree.Node,
+                            thisObj:Object,
+                            fn:Function,
+                            args:any[],
+                            env:Environment) {
   if (fn === eval) {
     if (typeof args[0] === "string") {
       // here is the case where `eval` is executed in metacircular space, therefore it has to be
       // handled in special way
-      function cc({e, result}) {
-        c(result);
-      }
-
-      metaEval(e, args, env).then(cc).catch(cerr);
+      return await metaEval(e, args[0], env);
     } else {
-      c(args[0]);
+      return args[0];
     }
-  } else if (fn.metaFunction instanceof MetaFunction) {
-    fn.metaFunction.run(thisObj, args, c, cerr, env);
+  } else if ('__metaFunction__' in fn) {
+    // TODO: typecheck this
+    return await fn['__metaFunction__']['run'](thisObj, args, env);
   } else {
     try {
-      c(fn.apply(thisObj, args));
-    } catch (e) {
-      cerr("Error", e);
+      return fn.apply(thisObj, args);
+    } catch (error) {
+      throw new ExecutionError(e, error);
     }
   }
 }
@@ -53,52 +53,38 @@ export async function evaluate<T extends ESTree.Node>(e:T, env:Environment):Prom
     }
     return result;
   } else {
-    var error = new Error(e.type + " token is not yet implemented.");
-    throw error;
+    throw new Error(e.type + " token is not yet implemented.");
   }
 }
 
-function metaEval(node, programText:string, env:Environment):Promise<any> {
-  return new Promise((resolve, reject)=> {
-    // take only first argument that should be a text
-    programText = programText[0];
-
-    try {
-      var e = parse(programText),
-        env2,
-        cfg = clone(env.cfg);
-
-      cfg.programText = programText;
-
-      // indirect eval call is run in global context
-      if (node.callee.name !== "eval") {
-        while (env.prev) {
-          env = env.prev;
-        }
-      }
-      env2 = clone(env);
-      env2.cfg = cfg;
-
-      function metaCerr() {
-        // by pass 1st argument (ast)
-        reject.apply(null, [].slice.call(arguments, 1));
-      }
-
-      function metaC() {
-        resolve.apply(null, arguments);
-      }
-
-      runVM(e, env2, metaC, metaCerr);
-
-    } catch (error) {
-      if (error.message.indexOf("Invalid left-hand side in assignment") >= 0) {
-        reject({message: "Error", error: new ReferenceError(error.message)});
-      } else {
-        reject({message: "Error", error: new SyntaxError(error.message)});
-      }
-    }
-  });
-
+export async function evaluateArray<T extends ESTree.Node>(eArray:T[], env:Environment):Promise<EvaluatedNode<T>[]> {
+  let results = [];
+  for (let e of eArray) {
+    results.push(await (evaluate(e, env)));
+  }
+  return results;
 }
 
-export let runVM = (e, env, c, cerr) => evaluate(e, env).then(c).catch(cerr);
+async function metaEval(node, programText:string, env:Environment) {
+  try {
+    let e = parse(programText);
+    let cfg = clone(env.cfg);
+    cfg.programText = programText;
+
+    // indirect eval call is run in global context
+    if (node.callee.name !== "eval") {
+      while (env.prev) {
+        env = env.prev;
+      }
+    }
+    return await evaluate(e, env)
+  } catch (error) {
+    if (error.message.indexOf("Invalid left-hand side in assignment") >= 0) {
+      throw new ReferenceError(error.message);
+    } else if (error instanceof ExecutionError) {
+      throw error;
+    } else {
+      throw new SyntaxError(error.message);
+    }
+  }
+}

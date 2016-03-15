@@ -1,28 +1,19 @@
 import {GetValue} from "../environment";
 import {evaluate} from "../evaluate";
 
-export async function Literal(e:ESTree.Literal, env):Promise<any> {
-  return e.value;
+export async function Literal(e:ESTree.Literal, env):Promise<number | string | RegExp | boolean> {
+  return await e.value;
 }
 
 export async function Identifier(e:ESTree.Identifier, env) {
-  return GetValue(env, e.name);
+  return await GetValue(env, e.name);
 }
 
 export async function Property(e:ESTree.Property, env) {
-  e.key
-  function continueToValue(key) {
-    key = e.key.name || key;
-    delayEvaluate(e.value, env, (value) => {
-      c({
-        key: key,
-        value: value
-      });
-    }, cerr);
-  }
+  let key = (await evaluate(e.key, env)).value;
+  let value = (await evaluate(e.value, env)).value;
 
-  let value = await evaluate(e.key, env);
-
+  return {key, value};
 }
 
 export function ArrayPattern(e:ESTree.ArrayPattern, env) {
